@@ -1,24 +1,14 @@
 package Model;
 
 public class Grupo {
-    private String nombre;
-    private String color;
+    private final String     nombre;
+    private final ColorGrupo color;
 
-    public Grupo(String nombre, String color) {
-        this.nombre = nombre;
-        this.color = color;
+    public Grupo(String nombre, ColorGrupo color) {
+        this.nombre = nombre; this.color = color;
     }
+    public String     getNombre() { return nombre; }
+    public ColorGrupo getColor()  { return color;  }
 
-    public String getNombre() {
-        return nombre;
-    }
-
-    public String getColor() {
-        return color;
-    }
-
-    @Override
-    public String toString() {
-        return nombre + " (" + color + ")";
-    }
+    @Override public String toString() { return nombre + " (" + color.getNombre() + ")"; }
 }
