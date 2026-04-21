@@ -1,143 +1,159 @@
 package service;
 
-import Model.*;
+import Model.Grupo;
+import Model.Usuario;
 
 import java.util.*;
 
 public class RedSocial {
 
-    private final Map<String, Usuario> usuarios;
-    private final Map<String, Grupo> grupos;
-    private final Map<Usuario, List<Usuario>> amistades;
+    // ─── datos ──────────────────────────────────────────────────────────────────
+    private final Map<String, Usuario>       usuarios   = new LinkedHashMap<>();
+    private final Map<String, Grupo>         grupos     = new LinkedHashMap<>();
+    private final Map<Usuario, List<Usuario>> amistades = new LinkedHashMap<>();
 
-    public RedSocial() {
-        usuarios = new LinkedHashMap<>();
-        grupos = new LinkedHashMap<>();
-        amistades = new LinkedHashMap<>();
+    // ─── PUNTO 3 y 4: lista de listeners ────────────────────────────────────────
+    private final List<RedSocialListener> listeners = new ArrayList<>();
+
+    /** Registra un panel para recibir notificaciones cada vez que cambian los datos. */
+    public void addListener(RedSocialListener l) {
+        if (!listeners.contains(l)) listeners.add(l);
     }
 
-    public boolean agregarUsuario(Usuario usuario) {
-        if (usuario == null || usuarios.containsKey(usuario.getUsername())) {
-            return false;
+    /** Llama onDataChanged() en todos los listeners registrados. */
+    private void notificar() {
+        for (RedSocialListener l : listeners) {
+            l.onDataChanged();
         }
+    }
+
+    // ─── usuarios ────────────────────────────────────────────────────────────────
+
+    /**
+     * Agrega un usuario nuevo.
+     * @return false si ya existe un usuario con ese username.
+     */
+    public boolean agregarUsuario(Usuario usuario) {
+        if (usuarios.containsKey(usuario.getUsername())) return false;
         usuarios.put(usuario.getUsername(), usuario);
         amistades.put(usuario, new ArrayList<>());
+        notificar();   // <-- notifica a todos los paneles
         return true;
-    }
-
-    public boolean agregarGrupo(Grupo grupo) {
-        if (grupo == null || grupos.containsKey(grupo.getNombre().toLowerCase())) {
-            return false;
-        }
-        grupos.put(grupo.getNombre().toLowerCase(), grupo);
-        return true;
-    }
-
-    public Collection<Usuario> getUsuarios() {
-        return usuarios.values();
-    }
-
-    public Collection<Grupo> getGrupos() {
-        return grupos.values();
     }
 
     public Usuario buscarUsuario(String username) {
         return usuarios.get(username);
     }
 
-    public Grupo buscarGrupo(String nombre) {
-        return grupos.get(nombre.toLowerCase());
+    public Collection<Usuario> getUsuarios() {
+        return Collections.unmodifiableCollection(usuarios.values());
     }
 
+    // ─── grupos ──────────────────────────────────────────────────────────────────
+
+    /**
+     * Agrega un grupo nuevo.
+     * @return false si ya existe un grupo con ese nombre.
+     */
+    public boolean agregarGrupo(Grupo grupo) {
+        if (grupos.containsKey(grupo.getNombre())) return false;
+        grupos.put(grupo.getNombre(), grupo);
+        notificar();   // <-- notifica a todos los paneles
+        return true;
+    }
+
+    public Collection<Grupo> getGrupos() {
+        return Collections.unmodifiableCollection(grupos.values());
+    }
+
+    /**
+     * Asigna un grupo a un usuario por nombre.
+     * @return false si el usuario o el grupo no existen.
+     */
     public boolean asignarGrupoAUsuario(String username, String nombreGrupo) {
-        Usuario usuario = buscarUsuario(username);
-        Grupo grupo = buscarGrupo(nombreGrupo);
-
-        if (usuario == null || grupo == null) {
-            return false;
-        }
-
-        usuario.setGrupo(grupo);
+        Usuario u = usuarios.get(username);
+        Grupo   g = grupos.get(nombreGrupo);
+        if (u == null || g == null) return false;
+        u.setGrupo(g);
+        notificar();
         return true;
     }
 
-    public boolean agregarAmistad(String user1, String user2) {
-        Usuario u1 = buscarUsuario(user1);
-        Usuario u2 = buscarUsuario(user2);
+    // ─── amistades ───────────────────────────────────────────────────────────────
 
-        if (u1 == null || u2 == null || u1.equals(u2)) {
-            return false;
-        }
+    /**
+     * Agrega una amistad DIRIGIDA de u1 → u2 (no recíproca automáticamente).
+     * @return false si alguno no existe o la amistad ya existe.
+     */
+    public boolean agregarAmistad(String username1, String username2) {
+        Usuario u1 = usuarios.get(username1);
+        Usuario u2 = usuarios.get(username2);
+        if (u1 == null || u2 == null || u1.equals(u2)) return false;
 
-        if (!amistades.get(u1).contains(u2)) {
-            amistades.get(u1).add(u2);
-        }
+        List<Usuario> amigosU1 = amistades.get(u1);
+        if (amigosU1.contains(u2)) return false;   // ya existe
 
-        if (!amistades.get(u2).contains(u1)) {
-            amistades.get(u2).add(u1);
-        }
-
+        amigosU1.add(u2);
+        notificar();
         return true;
     }
 
-    public boolean eliminarAmistad(String user1, String user2) {
-        Usuario u1 = buscarUsuario(user1);
-        Usuario u2 = buscarUsuario(user2);
+    /**
+     * Elimina la amistad dirigida u1 → u2.
+     * @return false si no existía.
+     */
+    public boolean eliminarAmistad(String username1, String username2) {
+        Usuario u1 = usuarios.get(username1);
+        Usuario u2 = usuarios.get(username2);
+        if (u1 == null || u2 == null) return false;
 
-        if (u1 == null || u2 == null) {
-            return false;
-        }
-
-        amistades.get(u1).remove(u2);
-        amistades.get(u2).remove(u1);
-        return true;
+        boolean eliminado = amistades.get(u1).remove(u2);
+        if (eliminado) notificar();
+        return eliminado;
     }
 
+    /** Devuelve el mapa completo de amistades (para dibujar el grafo). */
+    public Map<Usuario, List<Usuario>> getAmistades() {
+        return Collections.unmodifiableMap(amistades);
+    }
+
+    // ─── consultas BFS ───────────────────────────────────────────────────────────
+
+    /**
+     * Devuelve la lista de amigos directos del usuario (salientes).
+     */
     public List<Usuario> obtenerAmigos(String username) {
-        Usuario usuario = buscarUsuario(username);
-        if (usuario == null) {
-            return new ArrayList<>();
-        }
-        return new ArrayList<>(amistades.get(usuario));
+        Usuario u = usuarios.get(username);
+        if (u == null) return Collections.emptyList();
+        return Collections.unmodifiableList(amistades.getOrDefault(u, Collections.emptyList()));
     }
 
-    // BFS para sugerencias: amigos de amigos
+    /**
+     * Devuelve sugerencias de amistad usando BFS (amigos de amigos que no son ya amigos directos).
+     */
     public List<Usuario> obtenerSugerencias(String username) {
-        Usuario inicio = buscarUsuario(username);
-        if (inicio == null) {
-            return new ArrayList<>();
-        }
+        Usuario origen = usuarios.get(username);
+        if (origen == null) return Collections.emptyList();
 
-        Set<Usuario> visitados = new LinkedHashSet<>();
-        Queue<Usuario> cola = new LinkedList<>();
-        Set<Usuario> sugerencias = new LinkedHashSet<>();
+        List<Usuario> amigosDirectos = amistades.getOrDefault(origen, Collections.emptyList());
+        Set<Usuario>  yaConoce       = new HashSet<>(amigosDirectos);
+        yaConoce.add(origen);
 
-        visitados.add(inicio);
-        cola.offer(inicio);
+        List<Usuario> sugerencias = new ArrayList<>();
+        Set<Usuario>  visto       = new HashSet<>();
 
+        // BFS: nivel 2 (amigos de amigos)
+        Queue<Usuario> cola = new LinkedList<>(amigosDirectos);
         while (!cola.isEmpty()) {
             Usuario actual = cola.poll();
-
-            for (Usuario vecino : amistades.get(actual)) {
-                if (!visitados.contains(vecino)) {
-                    visitados.add(vecino);
-                    cola.offer(vecino);
+            List<Usuario> amigosDeAmigo = amistades.getOrDefault(actual, Collections.emptyList());
+            for (Usuario candidato : amigosDeAmigo) {
+                if (!yaConoce.contains(candidato) && !visto.contains(candidato)) {
+                    sugerencias.add(candidato);
+                    visto.add(candidato);
                 }
             }
         }
-
-        List<Usuario> amigosDirectos = amistades.get(inicio);
-
-        for (Usuario visitado : visitados) {
-            if (!visitado.equals(inicio) && !amigosDirectos.contains(visitado)) {
-                sugerencias.add(visitado);
-            }
-        }
-
-        return new ArrayList<>(sugerencias);
-    }
-
-    public Map<Usuario, List<Usuario>> getAmistades() {
-        return amistades;
+        return sugerencias;
     }
 }
